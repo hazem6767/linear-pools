@@ -36,11 +36,11 @@ interface IButtonWrapper {
     /// @return The amount of underlying tokens deposited.
     function mintFor(address to, uint256 amount) external returns (uint256);
 
-    /// @notice Burns wrapper tokens from {msg.sender} and transfers
-    ///         the underlying tokens back.
-    /// @param amount The amount of wrapper tokens to burn.
-    /// @return The amount of underlying tokens withdrawn.
-    function burn(uint256 amount) external returns (uint256);
+    // /// @notice Burns wrapper tokens from {msg.sender} and transfers
+    // ///         the underlying tokens back.
+    // /// @param amount The amount of wrapper tokens to burn.
+    // /// @return The amount of underlying tokens withdrawn.
+    // function burn(uint256 amount) external returns (uint256);
 
     /// @notice Burns wrapper tokens from {msg.sender} and transfers
     ///         the underlying tokens to the specified beneficiary.
