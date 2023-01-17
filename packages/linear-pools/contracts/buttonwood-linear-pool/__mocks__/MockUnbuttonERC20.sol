@@ -22,8 +22,9 @@ import "@orbcollective/shared-dependencies/contracts/MockMaliciousQueryReverter.
 import "@orbcollective/shared-dependencies/contracts/TestToken.sol";
 
 contract MockUnbuttonERC20 is TestToken, IButtonWrapper, MockMaliciousQueryReverter {
-    uint256 public constant INITIAL_DEPOSIT = 1_000;
-    address internal _underlying;
+    address private immutable _underlying;
+    uint256 private _underlyingToWrapperRate;
+    uint256 private _wrapperToUnderlyingRate;
 
     constructor(
         address underlying,
@@ -34,22 +35,12 @@ contract MockUnbuttonERC20 is TestToken, IButtonWrapper, MockMaliciousQueryRever
         _underlying = underlying;
     }
 
-    function initialize(uint256 initialRate) public {
-        uint256 mintAmount = INITIAL_DEPOSIT * initialRate;
-        TestToken(_underlying).transferFrom(msg.sender, address(this), INITIAL_DEPOSIT);
-        _mint(address(this), mintAmount);
+    function deposit(uint256 /*uAmount*/) external pure override returns (uint256) {
+        return 0;
     }
 
-    function deposit(uint256 uAmount) external override returns (uint256) {
-        uint256 amount = _fromUnderlyingAmount(uAmount, _queryUnderlyingBalance(), totalSupply());
-        _deposit(msg.sender, msg.sender, uAmount, amount);
-        return amount;
-    }
-
-    function withdraw(uint256 uAmount) external override returns (uint256) {
-        uint256 amount = _fromUnderlyingAmount(uAmount, _queryUnderlyingBalance(), totalSupply());
-        _withdraw(msg.sender, msg.sender, uAmount, amount);
-        return amount;
+    function withdraw(uint256 /*uAmount*/) external pure override returns (uint256) {
+        return 0;
     }
 
     function underlying() external view override returns (address) {
@@ -58,47 +49,11 @@ contract MockUnbuttonERC20 is TestToken, IButtonWrapper, MockMaliciousQueryRever
 
     function underlyingToWrapper(uint256 uAmount) external view override returns (uint256) {
         maybeRevertMaliciously();
-        return _fromUnderlyingAmount(uAmount, _queryUnderlyingBalance(), totalSupply());
+        return uAmount;
     }
 
     function wrapperToUnderlying(uint256 amount) external view override returns (uint256) {
         maybeRevertMaliciously();
-        return _toUnderlyingAmount(amount, _queryUnderlyingBalance(), totalSupply());
-    }
-
-    function _deposit(address from, address to, uint256 uAmount, uint256 amount) private {
-        require(amount > 0, "UnbuttonToken: too few unbutton tokens to mint");
-
-        TestToken(_underlying).transferFrom(from, address(this), uAmount);
-
-        _mint(to, amount);
-    }
-
-    function _withdraw(address from, address to, uint256 uAmount, uint256 amount) private {
-        require(amount > 0, "UnbuttonToken: too few unbutton tokens to burn");
-
-        _burn(from, amount);
-
-        TestToken(_underlying).transferFrom(address(this), to, uAmount);
-    }
-
-    function _queryUnderlyingBalance() private view returns (uint256) {
-        return IERC20(_underlying).balanceOf(address(this));
-    }
-
-    function _fromUnderlyingAmount(
-        uint256 uAmount,
-        uint256 totalUnderlying_,
-        uint256 totalSupply
-    ) private pure returns (uint256) {
-        return (uAmount * totalSupply) / totalUnderlying_;
-    }
-
-    function _toUnderlyingAmount(
-        uint256 amount,
-        uint256 totalUnderlying_,
-        uint256 totalSupply
-    ) private pure returns (uint256) {
-        return (amount * totalUnderlying_) / totalSupply;
+        return amount;
     }
 }

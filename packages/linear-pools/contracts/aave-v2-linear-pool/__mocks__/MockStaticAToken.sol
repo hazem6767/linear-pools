@@ -46,20 +46,11 @@ contract MockStaticAToken is TestToken, IStaticAToken {
         revert("Should not call this");
     }
 
-    function deposit(
-        address,
-        uint256,
-        uint16,
-        bool
-    ) external pure override returns (uint256) {
+    function deposit(address, uint256, uint16, bool) external pure override returns (uint256) {
         return 0;
     }
 
-    function withdraw(
-        address,
-        uint256,
-        bool
-    ) external pure override returns (uint256, uint256) {
+    function withdraw(address, uint256, bool) external pure override returns (uint256, uint256) {
         return (0, 0);
     }
 

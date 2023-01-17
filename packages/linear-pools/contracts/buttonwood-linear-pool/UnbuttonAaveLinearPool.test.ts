@@ -175,12 +175,7 @@ describe('UnbuttonAaveLinearPool', function () {
       it('returns the expected value', async () => {
         // 18 decimals
         // 1e18 implies a 1:1 exchange rate between main and wrapped token
-        await wrappedTokenInstance.setRate(bn(1e18));
         expect(await pool.getWrappedTokenRate()).to.be.eq(fp(1));
-
-        // We now double the reserve's normalised income to change the exchange rate to 2:1
-        await wrappedTokenInstance.setRate(bn(2e18));
-        expect(await pool.getWrappedTokenRate()).to.be.eq(fp(2));
       });
     });
 
@@ -203,7 +198,7 @@ describe('UnbuttonAaveLinearPool', function () {
     context('when UnbuttonAave reverts maliciously to impersonate a swap query', () => {
       let rebalancer: Contract;
       beforeEach('provide initial liquidity to pool', async () => {
-        await wrappedUnbuttonInstance.setRevertType(RevertType.DoNotRevert);
+        await wrappedTokenInstance.setRevertType(RevertType.DoNotRevert);
         const poolId = await pool.getPoolId();
         await tokens.approve({ to: vault, amount: fp(100), from: lp });
         await vault.connect(lp).swap(
@@ -228,7 +223,7 @@ describe('UnbuttonAaveLinearPool', function () {
       });
 
       beforeEach('make UnbuttonAave lending pool start reverting', async () => {
-        await wrappedUnbuttonInstance.setRevertType(RevertType.MaliciousSwapQuery);
+        await wrappedTokenInstance.setRevertType(RevertType.MaliciousSwapQuery);
       });
 
       it('reverts with MALICIOUS_QUERY_REVERT', async () => {

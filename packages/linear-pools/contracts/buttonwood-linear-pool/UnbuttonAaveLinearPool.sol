@@ -91,8 +91,8 @@ contract UnbuttonAaveLinearPool is LinearPool, Version {
      *      query decimals for the main token or wrapped token.
      */
     function _getWrappedTokenRate() internal view override returns (uint256) {
-        // 1e18 wAaveAMPL = r1 aaveAMPL
-        // r1 aaveAMPL = r1 AMPL (AMPL and aaveAMPL have a 1:1 exchange rate)
+        //1e18 wAaveAMPL = r1 aaveAMPL
+        //r1 aaveAMPL = r1 AMPL (AMPL and aaveAMPL have a 1:1 exchange rate)
         try IUnbuttonToken(address(getWrappedToken())).wrapperToUnderlying(FixedPoint.ONE) returns (uint256 r1) {
             // r1 AMPL = r2 wAMPL
             try IUnbuttonToken(address(getMainToken())).underlyingToWrapper(r1) returns (uint256 r2) {
