@@ -28,6 +28,8 @@ import "@balancer-labs/v2-solidity-utils/contracts/openzeppelin/Create2.sol";
 import "@balancer-labs/v2-solidity-utils/contracts/openzeppelin/ReentrancyGuard.sol";
 
 import "./UnbuttonAaveLinearPool.sol";
+import "./UnbuttonAaveLinearPoolRebalancer.sol";
+import "hardhat/console.sol";
 
 contract UnbuttonAaveLinearPoolFactory is
     ILastCreatedPoolFactory,
@@ -41,6 +43,9 @@ contract UnbuttonAaveLinearPoolFactory is
         string name;
         bool registered;
     }
+
+    // Used for create2 deployments
+    uint256 private _nextRebalancerSalt;
 
     IBalancerQueries private immutable _queries;
 
@@ -104,6 +109,13 @@ contract UnbuttonAaveLinearPoolFactory is
         return protocolIdData.name;
     }
 
+    function _create(bytes memory constructorArgs) internal virtual override returns (address) {
+        address pool = super._create(constructorArgs);
+        _lastCreatedPool = pool;
+
+        return pool;
+    }
+
     /**
      * @dev Deploys a new `UnbuttonAaveLinearPool`.
      */
@@ -117,29 +129,55 @@ contract UnbuttonAaveLinearPoolFactory is
         address owner,
         uint256 protocolId
     ) external nonReentrant returns (LinearPool) {
+        // We are going to deploy both an UnbuttonAaveLinearPool and an UnbuttonAaveLinearPoolRebalancer set as its Asset Manager,
+        // but this creates a circular dependency problem: the Pool must know the Asset Manager's address in order to
+        // call `IVault.registerTokens` with it, and the Asset Manager must know about the Pool in order to store its
+        // Pool ID, wrapped and main tokens, etc., as immutable variables.
+        // We could forego immutable storage in the Rebalancer and simply have a two-step initialization process that
+        // uses storage, but we can keep those gas savings by instead making the deployment a bit more complicated.
+        //
+        // Note that the Pool does not interact with the Asset Manager: it only needs to know about its address.
+        // We therefore use create2 to deploy the Asset Manager, first computing the address where it will be deployed.
+        // With that knowledge, we can then create the Pool, and finally the Asset Manager. The only issue with this
+        // approach is that create2 requires the full creation code, including constructor arguments, and among those is
+        // the Pool's address. To work around this, we have the Rebalancer fetch this address from `getLastCreatedPool`,
+        // which will hold the Pool's address after we call `_create`.
+
+        bytes32 rebalancerSalt = bytes32(_nextRebalancerSalt);
+        _nextRebalancerSalt += 1;
+
+        bytes memory rebalancerCreationCode = abi.encodePacked(
+            type(UnbuttonAaveLinearPoolRebalancer).creationCode,
+            abi.encode(getVault(), _queries)
+        );
+
+        address expectedRebalancerAddress = Create2.computeAddress(rebalancerSalt, keccak256(rebalancerCreationCode));
         (uint256 pauseWindowDuration, uint256 bufferPeriodDuration) = getPauseConfiguration();
 
-        LinearPool pool = UnbuttonAaveLinearPool(
-            _create(
-                abi.encode(
-                    getVault(),
-                    name,
-                    symbol,
-                    mainToken,
-                    wrappedToken,
-                    upperTarget,
-                    swapFeePercentage,
-                    pauseWindowDuration,
-                    bufferPeriodDuration,
-                    owner,
-                    getPoolVersion()
-                )
-            )
-        );
+        UnbuttonAaveLinearPool.ConstructorArgs memory args;
+        args.vault = getVault();
+        args.name = name;
+        args.symbol = symbol;
+        args.mainToken = mainToken;
+        args.wrappedToken = wrappedToken;
+        args.assetManager = expectedRebalancerAddress;
+        args.upperTarget = upperTarget;
+        args.swapFeePercentage = swapFeePercentage;
+        args.pauseWindowDuration = pauseWindowDuration;
+        args.bufferPeriodDuration = bufferPeriodDuration;
+        args.owner = owner;
+        args.version = getPoolVersion();
+
+        UnbuttonAaveLinearPool pool = UnbuttonAaveLinearPool(_create(abi.encode(args)));
 
         // LinearPools have a separate post-construction initialization step: we perform it here to
         // ensure deployment and initialization are atomic.
         pool.initialize();
+        // Not that the Linear Pool's deployment is complete, we can deploy the Rebalancer, verifying that we correctly
+        // predicted its deployment address.
+
+        address actualRebalancerAddress = Create2.deploy(0, rebalancerSalt, rebalancerCreationCode);
+        require(expectedRebalancerAddress == actualRebalancerAddress, "Rebalancer deployment failed");
 
         // Identify the protocolId associated with this pool. We do not require that the protocolId be registered.
         emit UnbuttonAaveLinearPoolCreated(address(pool), protocolId);

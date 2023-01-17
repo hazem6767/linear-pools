@@ -55,7 +55,7 @@ contract UnbuttonAaveLinearPool is LinearPool, Version {
             args.mainToken,
             args.wrappedToken,
             args.upperTarget,
-            new address[](2),
+            _toAssetManagerArray(args),
             args.swapFeePercentage,
             args.pauseWindowDuration,
             args.bufferPeriodDuration,
@@ -73,6 +73,15 @@ contract UnbuttonAaveLinearPool is LinearPool, Version {
         _require(mainUnderlying == wrappedUnderlying, Errors.TOKENS_MISMATCH);
     }
 
+    function _toAssetManagerArray(ConstructorArgs memory args) private pure returns (address[] memory) {
+        // We assign the same asset manager to both the main and wrapped tokens.
+        address[] memory assetManagers = new address[](2);
+        assetManagers[0] = args.assetManager;
+        assetManagers[1] = args.assetManager;
+
+        return assetManagers;
+    }
+
     /*
      * @dev This function returns the exchange rate between the main token and
      *      the wrapped token as a 18 decimal fixed point number.
@@ -83,14 +92,23 @@ contract UnbuttonAaveLinearPool is LinearPool, Version {
      */
     function _getWrappedTokenRate() internal view override returns (uint256) {
         // 1e18 wAaveAMPL = r1 aaveAMPL
-        uint256 r1 = IUnbuttonToken(address(getWrappedToken())).wrapperToUnderlying(FixedPoint.ONE);
-
         // r1 aaveAMPL = r1 AMPL (AMPL and aaveAMPL have a 1:1 exchange rate)
-
-        // r1 AMPL = r2 wAMPL
-        uint256 r2 = IUnbuttonToken(address(getMainToken())).underlyingToWrapper(r1);
-
-        // 1e18 wAaveAMPL = r2 wAMPL
-        return r2;
+        try IUnbuttonToken(address(getWrappedToken())).wrapperToUnderlying(FixedPoint.ONE) returns (uint256 r1) {
+            // r1 AMPL = r2 wAMPL
+            try IUnbuttonToken(address(getMainToken())).underlyingToWrapper(r1) returns (uint256 r2) {
+                // 1e18 wAaveAMPL = r2 wAMPL
+                return r2;
+            } catch (bytes memory revertData) {
+                // By maliciously reverting here, Aave (or any other contract in the call stack) could trick the Pool into
+                // reporting invalid data to the query mechanism for swaps/joins/exits.
+                // We then check the revert data to ensure this doesn't occur.
+                ExternalCallLib.bubbleUpNonMaliciousRevert(revertData);
+            }
+        } catch (bytes memory revertData) {
+            // By maliciously reverting here, Aave (or any other contract in the call stack) could trick the Pool into
+            // reporting invalid data to the query mechanism for swaps/joins/exits.
+            // We then check the revert data to ensure this doesn't occur.
+            ExternalCallLib.bubbleUpNonMaliciousRevert(revertData);
+        }
     }
 }

@@ -129,10 +129,12 @@ contract MockUnbuttonERC20 is TestToken, IButtonWrapper, MockMaliciousQueryRever
     }
 
     function underlyingToWrapper(uint256 uAmount) external view override returns (uint256) {
+        maybeRevertMaliciously();
         return _fromUnderlyingAmount(uAmount, _queryUnderlyingBalance(), totalSupply());
     }
 
     function wrapperToUnderlying(uint256 amount) external view override returns (uint256) {
+        maybeRevertMaliciously();
         return _toUnderlyingAmount(amount, _queryUnderlyingBalance(), totalSupply());
     }
 

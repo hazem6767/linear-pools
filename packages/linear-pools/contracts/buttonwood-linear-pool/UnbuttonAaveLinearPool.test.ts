@@ -32,45 +32,208 @@ enum RevertType {
 }
 
 async function deployBalancerContract(
-    task: string,
-    contractName: string,
-    deployer: SignerWithAddress,
-    args: unknown[]
-  ): Promise<Contract> {
-    const artifact = await getBalancerContractArtifact(task, contractName);
-    const factory = new ethers.ContractFactory(artifact.abi, artifact.bytecode, deployer);
-    const contract = await factory.deploy(...args);
-  
-    return contract;
-  }
+  task: string,
+  contractName: string,
+  deployer: SignerWithAddress,
+  args: unknown[]
+): Promise<Contract> {
+  const artifact = await getBalancerContractArtifact(task, contractName);
+  const factory = new ethers.ContractFactory(artifact.abi, artifact.bytecode, deployer);
+  const contract = await factory.deploy(...args);
 
+  return contract;
+}
 
-describe('UnbuttonLinearPool', function () {
-    let pool: Contract,
-        vault: Contract,
-        tokens: TokenList,
-        mainToken: Contract,
-        rebasingYieldToken: Contract,
-        wrappedYieldToken: Contract;
-    let poolFactory: Contract;
-    let wrappedYieldTokenInstance: Contract;
+describe('UnbuttonAaveLinearPool', function () {
+  let pool: Contract,
+    vault: Contract,
+    tokens: TokenList,
+    baseToken: Contract,
+    mainTokenInstance: Contract,
+    mainToken: Contract,
+    aaveWrappedTokenInstance: Contract,
+    aaveWrappedToken: Contract,
+    wrappedTokenInstance: Contract,
+    wrappedToken: Contract;
+  let poolFactory: Contract;
+  let guardian: SignerWithAddress, lp: SignerWithAddress, owner: SignerWithAddress;
+  let manager: SignerWithAddress;
+
+  const POOL_SWAP_FEE_PERCENTAGE = fp(0.01);
+  const UNBUTTONAAVE_PROTOCOL_ID = 8;
+
+  const BASE_PAUSE_WINDOW_DURATION = MONTH * 3;
+  const BASE_BUFFER_PERIOD_DURATION = MONTH;
+
+  before('Setup', async () => {
+    let deployer: SignerWithAddress;
     let trader: SignerWithAddress;
-    let guardian: SignerWithAddress, lp: SignerWithAddress, owner: SignerWithAddress;
-    let manager: SignerWithAddress;
 
-    const POOL_SWAP_FEE_PERCENTAGE = fp(0.01);
-    const BUTTONWOOD_PROTOCOL_ID = 7;
-    const amplFP = (n: number) => fp(n / 10 ** 9);
+    // appease the @typescript-eslint/no-unused-vars lint error
+    [, lp, owner] = await ethers.getSigners();
+    ({ vault, deployer, trader } = await setupEnvironment());
+    manager = deployer;
+    guardian = trader;
+    
+    baseToken = await deployToken('AMPL', 18);
 
-    const BASE_PAUSE_WINDOW_DURATION = MONTH * 3;
-    const BASE_BUFFER_PERIOD_DURATION = MONTH;
+    // Deploy tokens
+    mainTokenInstance = await deployPackageContract('MockUnbuttonERC20', {
+      args: [baseToken.address, 'wAMPL', 'wAMPL', 18],
+    });
 
-    before('Setup', async () => {
-        const [deployer] = await ethers.getSigners();
-        const deployerAddress = await deployer.getAddress();
+    mainToken = await getPackageContractDeployedAt('TestToken', mainTokenInstance.address);
 
-        const ampl = await deploy('TestToken', {
-            args: ['Mock Ampleforth', 'AMPL', 9],
-        });
+    aaveWrappedTokenInstance = await deployPackageContract('MockAToken', {
+      args: [baseToken.address, 'aaveAMPL', 'aaveAMPL', 18],
     })
-})
+
+    aaveWrappedToken = await getPackageContractDeployedAt('TestToken', aaveWrappedTokenInstance.address);
+
+    wrappedTokenInstance = await deployPackageContract('MockUnbuttonERC20', {
+      args: [aaveWrappedToken.address, 'wAaveAMPL', 'wAaveAMPL', 18],
+    });
+    wrappedToken = await getPackageContractDeployedAt('TestToken', wrappedTokenInstance.address);
+    tokens = new TokenList([mainToken, wrappedToken]).sort();
+
+    await tokens.mint({ to: [lp, trader], amount: fp(100) });
+
+    // Deploy Balancer Queries
+    const queriesTask = '20220721-balancer-queries';
+    const queriesContract = 'BalancerQueries';
+    const queriesArgs = [vault.address];
+    const queries = await deployBalancerContract(queriesTask, queriesContract, manager, queriesArgs);
+
+    // Deploy poolFactory
+    poolFactory = await deployPackageContract('UnbuttonAaveLinearPoolFactory', {
+      args: [
+        vault.address,
+        ZERO_ADDRESS,
+        queries.address,
+        'factoryVersion',
+        'poolVersion',
+        BASE_PAUSE_WINDOW_DURATION,
+        BASE_BUFFER_PERIOD_DURATION,
+      ],
+    });
+    // Deploy and initialize pool
+    const tx = await poolFactory.create(
+      'Balancer Pool Token',
+      'BPT',
+      mainToken.address,
+      wrappedToken.address,
+      bn(0),
+      POOL_SWAP_FEE_PERCENTAGE,
+      owner.address,
+      UNBUTTONAAVE_PROTOCOL_ID
+    );
+    const receipt = await tx.wait();
+    const event = expectEvent.inReceipt(receipt, 'PoolCreated');
+
+    pool = await getPackageContractDeployedAt('UnbuttonAaveLinearPool', event.args.pool);
+  });
+
+  describe('constructor', () => {
+    it('do not revert if the mainToken is not the ASSET of the wrappedToken', async () => {
+      const otherToken = await deployToken('USDC', 18, manager);
+
+      await expect(
+        poolFactory.create(
+          'Balancer Pool Token',
+          'BPT',
+          otherToken.address,
+          wrappedToken.address,
+          bn(0),
+          POOL_SWAP_FEE_PERCENTAGE,
+          owner.address,
+          UNBUTTONAAVE_PROTOCOL_ID
+        )
+      ).to.be.ok;
+    });
+  });
+
+  describe('asset managers', () => {
+    it('sets the same asset manager for main and wrapped token', async () => {
+      const poolId = await pool.getPoolId();
+
+      const { assetManager: firstAssetManager } = await vault.getPoolTokenInfo(poolId, tokens.first.address);
+      const { assetManager: secondAssetManager } = await vault.getPoolTokenInfo(poolId, tokens.second.address);
+
+      expect(firstAssetManager).to.not.equal(ZERO_ADDRESS);
+      expect(firstAssetManager).to.equal(secondAssetManager);
+    });
+
+    it('sets the no asset manager for the BPT', async () => {
+      const poolId = await pool.getPoolId();
+      const { assetManager } = await vault.getPoolTokenInfo(poolId, pool.address);
+      expect(assetManager).to.equal(ZERO_ADDRESS);
+    });
+  });
+
+  describe('getWrappedTokenRate', () => {
+    context('under normal operation', () => {
+      it('returns the expected value', async () => {
+        // 18 decimals
+        // 1e18 implies a 1:1 exchange rate between main and wrapped token
+        await wrappedTokenInstance.setRate(bn(1e18));
+        expect(await pool.getWrappedTokenRate()).to.be.eq(fp(1));
+
+        // We now double the reserve's normalised income to change the exchange rate to 2:1
+        await wrappedTokenInstance.setRate(bn(2e18));
+        expect(await pool.getWrappedTokenRate()).to.be.eq(fp(2));
+      });
+    });
+
+    context('when UnbuttonAave reverts maliciously to impersonate a swap query', () => {
+      it('reverts with MALICIOUS_QUERY_REVERT', async () => {
+        await wrappedTokenInstance.setRevertType(RevertType.MaliciousSwapQuery);
+        await expect(pool.getWrappedTokenRate()).to.be.revertedWith('BAL#357'); // MALICIOUS_QUERY_REVERT
+      });
+    });
+
+    context('when UnbuttonAave reverts maliciously to impersonate a join/exit query', () => {
+      it('reverts with MALICIOUS_QUERY_REVERT', async () => {
+        await wrappedTokenInstance.setRevertType(RevertType.MaliciousJoinExitQuery);
+        await expect(pool.getWrappedTokenRate()).to.be.revertedWith('BAL#357'); // MALICIOUS_QUERY_REVERT
+      });
+    });
+  });
+
+  describe('rebalancing', () => {
+    context('when UnbuttonAave reverts maliciously to impersonate a swap query', () => {
+      let rebalancer: Contract;
+      beforeEach('provide initial liquidity to pool', async () => {
+        await wrappedUnbuttonInstance.setRevertType(RevertType.DoNotRevert);
+        const poolId = await pool.getPoolId();
+        await tokens.approve({ to: vault, amount: fp(100), from: lp });
+        await vault.connect(lp).swap(
+          {
+            poolId,
+            kind: SwapKind.GivenIn,
+            assetIn: mainToken.address,
+            assetOut: pool.address,
+            amount: fp(10),
+            userData: '0x',
+          },
+          { sender: lp.address, fromInternalBalance: false, recipient: lp.address, toInternalBalance: false },
+          0,
+          MAX_UINT256
+        );
+      });
+
+      beforeEach('deploy and initialize pool', async () => {
+        const poolId = await pool.getPoolId();
+        const { assetManager } = await vault.getPoolTokenInfo(poolId, tokens.first.address);
+        rebalancer = await getPackageContractDeployedAt('UnbuttonAaveLinearPoolRebalancer', assetManager);
+      });
+
+      beforeEach('make UnbuttonAave lending pool start reverting', async () => {
+        await wrappedUnbuttonInstance.setRevertType(RevertType.MaliciousSwapQuery);
+      });
+
+      it('reverts with MALICIOUS_QUERY_REVERT', async () => {
+        await expect(rebalancer.rebalance(guardian.address)).to.be.revertedWith('BAL#357'); // MALICIOUS_QUERY_REVERT
+      });
+    });
+  });
+});
