@@ -40,53 +40,9 @@ contract MockUnbuttonERC20 is TestToken, IButtonWrapper, MockMaliciousQueryRever
         _mint(address(this), mintAmount);
     }
 
-    function mint(uint256 amount) external override returns (uint256) {
-        uint256 uAmount = _toUnderlyingAmount(amount, _queryUnderlyingBalance(), totalSupply());
-        _deposit(msg.sender, msg.sender, uAmount, amount);
-        return uAmount;
-    }
-
-    function mintFor(address to, uint256 amount) external override returns (uint256) {
-        uint256 uAmount = _toUnderlyingAmount(amount, _queryUnderlyingBalance(), totalSupply());
-        _deposit(msg.sender, to, uAmount, amount);
-        return uAmount;
-    }
-
-    // function burn(uint256 amount) external override returns (uint256) {
-    //     uint256 uAmount = _toUnderlyingAmount(amount, _queryUnderlyingBalance(), totalSupply());
-    //     _withdraw(msg.sender, msg.sender, uAmount, amount);
-    //     return uAmount;
-    // }
-
-    function burnTo(address to, uint256 amount) external override returns (uint256) {
-        uint256 uAmount = _toUnderlyingAmount(amount, _queryUnderlyingBalance(), totalSupply());
-        _withdraw(msg.sender, to, uAmount, amount);
-        return uAmount;
-    }
-
-    function burnAll() external override returns (uint256) {
-        uint256 amount = balanceOf(msg.sender);
-        uint256 uAmount = _toUnderlyingAmount(amount, _queryUnderlyingBalance(), totalSupply());
-        _withdraw(msg.sender, msg.sender, uAmount, amount);
-        return uAmount;
-    }
-
-    function burnAllTo(address to) external override returns (uint256) {
-        uint256 amount = balanceOf(msg.sender);
-        uint256 uAmount = _toUnderlyingAmount(amount, _queryUnderlyingBalance(), totalSupply());
-        _withdraw(msg.sender, to, uAmount, amount);
-        return uAmount;
-    }
-
     function deposit(uint256 uAmount) external override returns (uint256) {
         uint256 amount = _fromUnderlyingAmount(uAmount, _queryUnderlyingBalance(), totalSupply());
         _deposit(msg.sender, msg.sender, uAmount, amount);
-        return amount;
-    }
-
-    function depositFor(address to, uint256 uAmount) external override returns (uint256) {
-        uint256 amount = _fromUnderlyingAmount(uAmount, _queryUnderlyingBalance(), totalSupply());
-        _deposit(msg.sender, to, uAmount, amount);
         return amount;
     }
 
@@ -96,36 +52,8 @@ contract MockUnbuttonERC20 is TestToken, IButtonWrapper, MockMaliciousQueryRever
         return amount;
     }
 
-    function withdrawTo(address to, uint256 uAmount) external override returns (uint256) {
-        uint256 amount = _fromUnderlyingAmount(uAmount, _queryUnderlyingBalance(), totalSupply());
-        _withdraw(msg.sender, to, uAmount, amount);
-        return amount;
-    }
-
-    function withdrawAll() external override returns (uint256) {
-        uint256 amount = balanceOf(msg.sender);
-        uint256 uAmount = _toUnderlyingAmount(amount, _queryUnderlyingBalance(), totalSupply());
-        _withdraw(msg.sender, msg.sender, uAmount, amount);
-        return amount;
-    }
-
-    function withdrawAllTo(address to) external override returns (uint256) {
-        uint256 amount = balanceOf(msg.sender);
-        uint256 uAmount = _toUnderlyingAmount(amount, _queryUnderlyingBalance(), totalSupply());
-        _withdraw(msg.sender, to, uAmount, amount);
-        return amount;
-    }
-
     function underlying() external view override returns (address) {
         return _underlying;
-    }
-
-    function totalUnderlying() external view override returns (uint256) {
-        return _queryUnderlyingBalance();
-    }
-
-    function balanceOfUnderlying(address owner) external view override returns (uint256) {
-        return _toUnderlyingAmount(balanceOf(owner), _queryUnderlyingBalance(), totalSupply());
     }
 
     function underlyingToWrapper(uint256 uAmount) external view override returns (uint256) {
