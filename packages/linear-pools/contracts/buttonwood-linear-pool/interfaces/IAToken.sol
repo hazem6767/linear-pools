@@ -14,10 +14,17 @@
 
 pragma solidity >=0.7.0 <0.9.0;
 
+import "./ILendingPool.sol";
+
 interface IAToken {
     /**
      * @dev returns the address of the aToken's underlying asset
      */
     // solhint-disable-next-line func-name-mixedcase
     function UNDERLYING_ASSET_ADDRESS() external view returns (address);
+
+    /**
+     * @dev Returns the address of the lending pool where this aToken is used
+     **/
+    function POOL() external view returns (ILendingPool);
 }

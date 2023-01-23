@@ -13,9 +13,9 @@ import { describeForkTest } from '../../../src/forkTests';
 export enum SwapKind {
   GivenIn = 0,
   GivenOut,
-}
+} 
 
-describeForkTest('UnbuttonAaveLinearPoolFactory', 'mainnet', 16015018, function () {
+describeForkTest('UnbuttonAaveLinearPoolFactory', 'mainnet', 15629530, function () {
   let owner: SignerWithAddress, holder: SignerWithAddress, other: SignerWithAddress;
   let factory: Contract, vault: Contract, mainToken: Contract;
   let rebalancer: Contract;
@@ -32,11 +32,11 @@ describeForkTest('UnbuttonAaveLinearPoolFactory', 'mainnet', 16015018, function 
   const SWAP_FEE_PERCENTAGE = fp(0.01); // 1%
 
   // The targets are set using 18 decimals, even if the token has fewer (as is the case for USDC);
-  const INITIAL_UPPER_TARGET = fp(1e5);
+  const INITIAL_UPPER_TARGET = fp(1e2);
 
   // The initial midpoint (upper target / 2) must be between the final lower and upper targets
-  const FINAL_LOWER_TARGET = fp(0.2e5);
-  const FINAL_UPPER_TARGET = fp(5e5);
+  const FINAL_LOWER_TARGET = fp(0.2e2);
+  const FINAL_UPPER_TARGET = fp(5e2);
 
   const PROTOCOL_ID = 0;
 

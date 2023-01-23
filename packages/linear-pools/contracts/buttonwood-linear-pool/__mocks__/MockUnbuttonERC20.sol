@@ -19,19 +19,14 @@ pragma solidity ^0.7.0;
 import "../interfaces/IButtonWrapper.sol";
 
 import "@orbcollective/shared-dependencies/contracts/MockMaliciousQueryReverter.sol";
-import "@orbcollective/shared-dependencies/contracts/TestToken.sol";
+import "@balancer-labs/v2-solidity-utils/contracts/openzeppelin/ERC20.sol";
 
-contract MockUnbuttonERC20 is TestToken, IButtonWrapper, MockMaliciousQueryReverter {
+contract MockUnbuttonERC20 is ERC20, IButtonWrapper, MockMaliciousQueryReverter {
     address private immutable _underlying;
     uint256 private _underlyingToWrapperRate;
     uint256 private _wrapperToUnderlyingRate;
 
-    constructor(
-        address underlying,
-        string memory name,
-        string memory symbol,
-        uint8 decimals
-    ) TestToken(name, symbol, decimals) {
+    constructor(address underlying, string memory name, string memory symbol, uint8 decimals) ERC20(name, symbol) {
         _underlying = underlying;
     }
 
@@ -55,5 +50,13 @@ contract MockUnbuttonERC20 is TestToken, IButtonWrapper, MockMaliciousQueryRever
     function wrapperToUnderlying(uint256 amount) external view override returns (uint256) {
         maybeRevertMaliciously();
         return amount;
+    }
+
+    function mint(uint256 /*amount*/) external pure override returns (uint256) {
+        return 0;
+    }
+
+    function burn(uint256 /*amount*/) external pure override returns (uint256) {
+        return 0;
     }
 }

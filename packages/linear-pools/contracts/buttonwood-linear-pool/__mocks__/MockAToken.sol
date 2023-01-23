@@ -14,20 +14,28 @@
 pragma solidity >=0.7.0 <0.9.0;
 import "@orbcollective/shared-dependencies/contracts/TestToken.sol";
 import "../interfaces/IAToken.sol";
+import "../interfaces/ILendingPool.sol";
 
 contract MockAToken is TestToken, IAToken {
-    address private _underlying;
+    address private immutable _underlying;
+    ILendingPool private immutable _pool;
 
     constructor(
         address underlying,
         string memory name,
         string memory symbol,
-        uint8 decimals
+        uint8 decimals,
+        address pool
     ) TestToken(name, symbol, decimals) {
         _underlying = underlying;
+        _pool = ILendingPool(pool);
     }
 
     function UNDERLYING_ASSET_ADDRESS() external view override returns (address) {
         return _underlying;
+    }
+
+    function POOL() external view override returns (ILendingPool) {
+        return _pool;
     }
 }

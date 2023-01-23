@@ -16,14 +16,24 @@ pragma solidity ^0.7.0;
 pragma experimental ABIEncoderV2;
 
 import "./interfaces/IUnbuttonToken.sol";
+import "./interfaces/IAToken.sol";
+import "./interfaces/ILendingPool.sol";
 
 import "@balancer-labs/v2-interfaces/contracts/pool-utils/ILastCreatedPoolFactory.sol";
 import "@balancer-labs/v2-solidity-utils/contracts/openzeppelin/SafeERC20.sol";
+import "@balancer-labs/v2-interfaces/contracts/solidity-utils/openzeppelin/IERC20.sol";
 
 import "@balancer-labs/v2-pool-linear/contracts/LinearPoolRebalancer.sol";
 
 contract UnbuttonAaveLinearPoolRebalancer is LinearPoolRebalancer {
     using SafeERC20 for IERC20;
+    // Underlying asset for _mainToken
+    // Example AMPL token
+    IERC20 private _baseToken;
+    // Underlying asset for _wrappedToken
+    // Aave interest bearing token
+    IERC20 private _aaveToken;
+    ILendingPool private _aaveLendingPool;
 
     // These Rebalancers can only be deployed from a factory to work around a circular dependency: the Pool must know
     // the address of the Rebalancer in order to register it, and the Rebalancer must know the address of the Pool
@@ -31,30 +41,69 @@ contract UnbuttonAaveLinearPoolRebalancer is LinearPoolRebalancer {
     constructor(
         IVault vault,
         IBalancerQueries queries
-    ) LinearPoolRebalancer(ILinearPool(ILastCreatedPoolFactory(msg.sender).getLastCreatedPool()), vault, queries) {
-        // solhint-disable-previous-line no-empty-blocks
+    ) LinearPoolRebalancer(ILinearPool(ILastCreatedPoolFactory(msg.sender).getLastCreatedPool()), vault, queries) {}
+
+    modifier onlyOnce() {
+        if (address(_baseToken) == address(0) || address(_aaveToken) == address(0)) {
+            _;
+        }
     }
 
+    // TODO: Make sure this function accepts the main amount not the wrapped amount
     function _wrapTokens(uint256 amount) internal override {
-        // No referral code, depositing from underlying (i.e. DAI, USDC, etc. instead of aDAI or aUSDC). Before we can
-        // deposit however, we need to approve the wrapper in the underlying token.
-        _mainToken.safeApprove(address(_wrappedToken), amount);
-        IUnbuttonToken(address(_wrappedToken)).deposit(amount);
+        // Initialize global variables if not already done\
+        initializeBridgeAssets();
+        // convert wAMPL to AMPL
+        uint256 tokenAmount = IUnbuttonToken(address(_mainToken)).burn(amount);
+        // convert AMPL to Aave interest bearing AMPL (aAMPL)
+        console.log("wAMPL converted to AMPL");
+        console.log("AMPL Returned: ", tokenAmount);
+        // approve wrapper before depositing
+        _baseToken.safeApprove(address(_aaveLendingPool), tokenAmount);
+        _aaveLendingPool.deposit(address(_baseToken), tokenAmount, address(this), 0);
+        console.log("AMPL converted to aaveAMPL");
+        console.log("aaveAMPL Returned: ", _aaveToken.balanceOf(address(this)));
+        // deposit aave interest bearing token (aAMPL) to wrap into the desired _wrappedToken (ubAAMPL)
+        // approve wrapper before depositing
+        _aaveToken.safeApprove(address(_wrappedToken), tokenAmount);
+        IUnbuttonToken(address(_wrappedToken)).mint(tokenAmount);
+
+        console.log("aaveAMPL converted to ubAAMPL");
+        console.log("ubAAMPL Returned: ", _wrappedToken.balanceOf(address(this)));
     }
 
     function _unwrapTokens(uint256 amount) internal override {
-        // Withdrawing into underlying (i.e. DAI, USDC, etc. instead of aDAI or aUSDC). Approvals are not necessary here
-        // as the wrapped token is simply burnt.
-        IUnbuttonToken(address(_wrappedToken)).withdraw(amount);
+        // Initialize global variables if not already done
+        initializeBridgeAssets();
+        // convert ubAAMPL to aaveAMPL
+        uint256 tokenAmount = IUnbuttonToken(address(_wrappedToken)).burn(amount);
+        console.log("ubAAMPL converted to aaveAMPL");
+        console.log("aaveAMPL Returned: ", tokenAmount);
+        // withdraw AMPL from the aave liquidity pool
+        _aaveLendingPool.withdraw(address(_baseToken), tokenAmount, address(this));
+        console.log("aaveAMPL converted to AMPL");
+        console.log("aaveAMPL Returned: ", _baseToken.balanceOf(address(this)));
+        // wrap AMPL into wAMPL
+        IUnbuttonToken(address(_mainToken)).mint(tokenAmount);
+        console.log("AMPL converted to wAMPL");
+        console.log("wAMPL Returned: ", _wrappedToken.balanceOf(address(this)));
     }
 
     function _getRequiredTokensToWrap(uint256 wrappedAmount) internal view override returns (uint256) {
-        // 1e18 wAaveAMPL = r1 aaveAMPL
+        // wrappedtoken: ubAaveAMPL = r1 aaveAMPL
         uint256 r1 = IUnbuttonToken(address(_wrappedToken)).wrapperToUnderlying(wrappedAmount);
 
         // r1 aaveAMPL = r1 AMPL (AMPL and aaveAMPL have a 1:1 exchange rate)
 
         // r1 AMPL = r2 wAMPL
         return IUnbuttonToken(address(_mainToken)).underlyingToWrapper(r1) + 1;
+    }
+
+    // This function will run only once in the lifetime of the contract if the global variables are not yet initialized
+    // We set these in order to be able to wrap and unwrap tokens due to the underlying tokens not being the same
+    function initializeBridgeAssets() internal onlyOnce {
+        _baseToken = IERC20(IUnbuttonToken(address(_mainToken)).underlying());
+        _aaveToken = IERC20(IUnbuttonToken(address(_wrappedToken)).underlying());
+        _aaveLendingPool = IAToken(address(_aaveToken)).POOL();
     }
 }
