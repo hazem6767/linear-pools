@@ -54,44 +54,39 @@ contract UnbuttonAaveLinearPoolRebalancer is LinearPoolRebalancer {
         // Initialize global variables if not already done\
         initializeBridgeAssets();
         // convert wAMPL to AMPL
-        uint256 tokenAmount = IUnbuttonToken(address(_mainToken)).burn(amount);
+        uint256 baseTokenAmount = IUnbuttonToken(address(_mainToken)).burn(amount);
         // convert AMPL to Aave interest bearing AMPL (aAMPL)
-        console.log("wAMPL converted to AMPL");
-        console.log("AMPL Returned: ", tokenAmount);
+
         // approve wrapper before depositing
-        _baseToken.safeApprove(address(_aaveLendingPool), tokenAmount);
-        _aaveLendingPool.deposit(address(_baseToken), tokenAmount, address(this), 0);
-        console.log("AMPL converted to aaveAMPL");
-        console.log("aaveAMPL Returned: ", _aaveToken.balanceOf(address(this)));
+        _baseToken.safeApprove(address(_aaveLendingPool), baseTokenAmount);
+        _aaveLendingPool.deposit(address(_baseToken), baseTokenAmount, address(this), 0);
+
+        uint256 aaveTokenBalance = _aaveToken.balanceOf(address(this));
         // deposit aave interest bearing token (aAMPL) to wrap into the desired _wrappedToken (ubAAMPL)
         // approve wrapper before depositing
-        _aaveToken.safeApprove(address(_wrappedToken), tokenAmount);
-        IUnbuttonToken(address(_wrappedToken)).mint(tokenAmount);
-
-        console.log("aaveAMPL converted to ubAAMPL");
-        console.log("ubAAMPL Returned: ", _wrappedToken.balanceOf(address(this)));
+        _aaveToken.safeApprove(address(_wrappedToken), aaveTokenBalance);
+        IUnbuttonToken(address(_wrappedToken)).deposit(aaveTokenBalance);
     }
 
     function _unwrapTokens(uint256 amount) internal override {
         // Initialize global variables if not already done
         initializeBridgeAssets();
-        // convert ubAAMPL to aaveAMPL
-        uint256 tokenAmount = IUnbuttonToken(address(_wrappedToken)).burn(amount);
-        console.log("ubAAMPL converted to aaveAMPL");
-        console.log("aaveAMPL Returned: ", tokenAmount);
+
+        // convert ubAAMPLto aaveAMPL
+        uint256 aaveTokenAmount = IUnbuttonToken(address(_wrappedToken)).burn(amount) - 1;
+
         // withdraw AMPL from the aave liquidity pool
-        _aaveLendingPool.withdraw(address(_baseToken), tokenAmount, address(this));
-        console.log("aaveAMPL converted to AMPL");
-        console.log("aaveAMPL Returned: ", _baseToken.balanceOf(address(this)));
+        uint256 baseTokenAmount = _aaveLendingPool.withdraw(address(_baseToken), aaveTokenAmount, address(this));
+
         // wrap AMPL into wAMPL
-        IUnbuttonToken(address(_mainToken)).mint(tokenAmount);
-        console.log("AMPL converted to wAMPL");
-        console.log("wAMPL Returned: ", _wrappedToken.balanceOf(address(this)));
+        // Approve the token transfer before depositing
+        _baseToken.safeApprove(address(_mainToken), baseTokenAmount);
+        IUnbuttonToken(address(_mainToken)).deposit(baseTokenAmount);
     }
 
     function _getRequiredTokensToWrap(uint256 wrappedAmount) internal view override returns (uint256) {
         // wrappedtoken: ubAaveAMPL = r1 aaveAMPL
-        uint256 r1 = IUnbuttonToken(address(_wrappedToken)).wrapperToUnderlying(wrappedAmount);
+        uint256 r1 = IUnbuttonToken(address(_wrappedToken)).wrapperToUnderlying(wrappedAmount) + 1;
 
         // r1 aaveAMPL = r1 AMPL (AMPL and aaveAMPL have a 1:1 exchange rate)
 
