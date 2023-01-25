@@ -51,4 +51,7 @@ interface IButtonWrapper {
     /// @param amount The amount of wrapper tokens.
     /// @return The amount of underlying tokens exchangeable.
     function wrapperToUnderlying(uint256 amount) external view returns (uint256);
+
+    /// @return The total underlying tokens held by the wrapper contract.
+    function totalUnderlying() external view returns (uint256);
 }

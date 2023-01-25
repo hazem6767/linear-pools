@@ -17,12 +17,13 @@ pragma experimental ABIEncoderV2;
 
 import "./interfaces/IUnbuttonToken.sol";
 import "./interfaces/IAToken.sol";
+import "./UnbuttonExchangeRateModel.sol";
 
 import "@balancer-labs/v2-pool-utils/contracts/lib/ExternalCallLib.sol";
 import "@balancer-labs/v2-pool-utils/contracts/Version.sol";
 
 import "@balancer-labs/v2-solidity-utils/contracts/openzeppelin/ERC20.sol";
-import "@balancer-labs/v2-solidity-utils/contracts/math/Math.sol";
+import "@balancer-labs/v2-solidity-utils/contracts/math/FixedPoint.sol";
 
 import "@balancer-labs/v2-pool-linear/contracts/LinearPool.sol";
 
@@ -30,6 +31,9 @@ import "@balancer-labs/v2-pool-linear/contracts/LinearPool.sol";
  *      Unbutton wrapper: https://github.com/buttonwood-protocol/button-wrappers/blob/main/contracts/UnbuttonToken.sol
  */
 contract UnbuttonAaveLinearPool is LinearPool, Version {
+    using FixedPoint for uint256;
+    UnbuttonExchangeRateModel private immutable _exchangeRateModel;
+
     struct ConstructorArgs {
         IVault vault;
         string name;
@@ -71,6 +75,8 @@ contract UnbuttonAaveLinearPool is LinearPool, Version {
         address wrappedUnderlying = IAToken(args.wrappedToken.underlying()).UNDERLYING_ASSET_ADDRESS();
 
         _require(mainUnderlying == wrappedUnderlying, Errors.TOKENS_MISMATCH);
+
+        _exchangeRateModel = new UnbuttonExchangeRateModel(args.mainToken, args.wrappedToken);
     }
 
     function _toAssetManagerArray(ConstructorArgs memory args) private pure returns (address[] memory) {
@@ -91,24 +97,6 @@ contract UnbuttonAaveLinearPool is LinearPool, Version {
      *      query decimals for the main token or wrapped token.
      */
     function _getWrappedTokenRate() internal view override returns (uint256) {
-        //1e18 wAaveAMPL = r1 aaveAMPL
-        //r1 aaveAMPL = r1 AMPL (AMPL and aaveAMPL have a 1:1 exchange rate)
-        try IUnbuttonToken(address(getWrappedToken())).wrapperToUnderlying(FixedPoint.ONE) returns (uint256 r1) {
-            // r1 AMPL = r2 wAMPL
-            try IUnbuttonToken(address(getMainToken())).underlyingToWrapper(r1) returns (uint256 r2) {
-                // 1e18 wAaveAMPL = r2 wAMPL
-                return r2;
-            } catch (bytes memory revertData) {
-                // By maliciously reverting here, Aave (or any other contract in the call stack) could trick the Pool into
-                // reporting invalid data to the query mechanism for swaps/joins/exits.
-                // We then check the revert data to ensure this doesn't occur.
-                ExternalCallLib.bubbleUpNonMaliciousRevert(revertData);
-            }
-        } catch (bytes memory revertData) {
-            // By maliciously reverting here, Aave (or any other contract in the call stack) could trick the Pool into
-            // reporting invalid data to the query mechanism for swaps/joins/exits.
-            // We then check the revert data to ensure this doesn't occur.
-            ExternalCallLib.bubbleUpNonMaliciousRevert(revertData);
-        }
+        return _exchangeRateModel.calculateExchangeRate();
     }
 }

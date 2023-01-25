@@ -19,7 +19,7 @@ export enum SwapKind {
   GivenOut,
 } 
 
-describeForkTest('UnbuttonAaveLinearPoolFactory', 'mainnet', 15629530, function () {
+describeForkTest('UnbuttonAaveLinearPoolFactory', 'mainnet', 15949400, function () {
   let owner: SignerWithAddress, holder: SignerWithAddress, other: SignerWithAddress;
   let factory: Contract, vault: Contract, mainToken: Contract;
   let rebalancer: Contract;
@@ -31,16 +31,16 @@ describeForkTest('UnbuttonAaveLinearPoolFactory', 'mainnet', 15629530, function 
 
   const wAMPL_SCALING = bn(1); // wAMPL has 18 decimals, so its scaling factor is 1
 
-  const wAMPL_HOLDER = '0x0ce3b511c3b3236758e13e8e347d2af582ec4ce4';
+  const wAMPL_HOLDER = '0xc3a947372191453dd9db02b0852d378dccbdf271';
 
   const SWAP_FEE_PERCENTAGE = fp(0.01); // 1%
 
   // The targets are set using 18 decimals, even if the token has fewer (as is the case for USDC);
-  const INITIAL_UPPER_TARGET = fp(1e2);
+  const INITIAL_UPPER_TARGET = fp(1e3);
 
   // The initial midpoint (upper target / 2) must be between the final lower and upper targets
-  const FINAL_LOWER_TARGET = fp(0.2e2);
-  const FINAL_UPPER_TARGET = fp(5e2);
+  const FINAL_LOWER_TARGET = fp(0.2e3);
+  const FINAL_UPPER_TARGET = fp(5e3);
 
   const PROTOCOL_ID = 0;
 

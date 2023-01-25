@@ -59,4 +59,8 @@ contract MockUnbuttonERC20 is ERC20, IButtonWrapper, MockMaliciousQueryReverter 
     function burn(uint256 /*amount*/) external pure override returns (uint256) {
         return 0;
     }
+
+    function totalUnderlying() external pure override returns (uint256) {
+        return 0;
+    }
 }

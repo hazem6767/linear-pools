@@ -18,15 +18,18 @@ pragma experimental ABIEncoderV2;
 import "./interfaces/IUnbuttonToken.sol";
 import "./interfaces/IAToken.sol";
 import "./interfaces/ILendingPool.sol";
+import "./UnbuttonExchangeRateModel.sol";
 
 import "@balancer-labs/v2-interfaces/contracts/pool-utils/ILastCreatedPoolFactory.sol";
 import "@balancer-labs/v2-solidity-utils/contracts/openzeppelin/SafeERC20.sol";
 import "@balancer-labs/v2-interfaces/contracts/solidity-utils/openzeppelin/IERC20.sol";
+import "@balancer-labs/v2-solidity-utils/contracts/math/FixedPoint.sol";
 
 import "@balancer-labs/v2-pool-linear/contracts/LinearPoolRebalancer.sol";
 
 contract UnbuttonAaveLinearPoolRebalancer is LinearPoolRebalancer {
     using SafeERC20 for IERC20;
+    using FixedPoint for uint256;
     // Underlying asset for _mainToken
     // Example AMPL token
     IERC20 private _baseToken;
@@ -34,6 +37,7 @@ contract UnbuttonAaveLinearPoolRebalancer is LinearPoolRebalancer {
     // Aave interest bearing token
     IERC20 private _aaveToken;
     ILendingPool private _aaveLendingPool;
+    UnbuttonExchangeRateModel private immutable _exchangeRateModel;
 
     // These Rebalancers can only be deployed from a factory to work around a circular dependency: the Pool must know
     // the address of the Rebalancer in order to register it, and the Rebalancer must know the address of the Pool
@@ -41,7 +45,13 @@ contract UnbuttonAaveLinearPoolRebalancer is LinearPoolRebalancer {
     constructor(
         IVault vault,
         IBalancerQueries queries
-    ) LinearPoolRebalancer(ILinearPool(ILastCreatedPoolFactory(msg.sender).getLastCreatedPool()), vault, queries) {}
+    ) LinearPoolRebalancer(ILinearPool(ILastCreatedPoolFactory(msg.sender).getLastCreatedPool()), vault, queries) {
+        ILinearPool pool = ILinearPool(ILastCreatedPoolFactory(msg.sender).getLastCreatedPool());
+        _exchangeRateModel = new UnbuttonExchangeRateModel(
+            IUnbuttonToken(address(pool.getMainToken())),
+            IUnbuttonToken(address(pool.getWrappedToken()))
+        );
+    }
 
     modifier onlyOnce() {
         if (address(_baseToken) == address(0) || address(_aaveToken) == address(0)) {
@@ -68,12 +78,12 @@ contract UnbuttonAaveLinearPoolRebalancer is LinearPoolRebalancer {
         IUnbuttonToken(address(_wrappedToken)).deposit(aaveTokenBalance);
     }
 
-    function _unwrapTokens(uint256 amount) internal override {
+    function _unwrapTokens(uint256 amountWrapped) internal override {
         // Initialize global variables if not already done
         initializeBridgeAssets();
 
         // convert ubAAMPLto aaveAMPL
-        uint256 aaveTokenAmount = IUnbuttonToken(address(_wrappedToken)).burn(amount) - 1;
+        uint256 aaveTokenAmount = IUnbuttonToken(address(_wrappedToken)).burn(amountWrapped) - 1;
 
         // withdraw AMPL from the aave liquidity pool
         uint256 baseTokenAmount = _aaveLendingPool.withdraw(address(_baseToken), aaveTokenAmount, address(this));
@@ -85,13 +95,8 @@ contract UnbuttonAaveLinearPoolRebalancer is LinearPoolRebalancer {
     }
 
     function _getRequiredTokensToWrap(uint256 wrappedAmount) internal view override returns (uint256) {
-        // wrappedtoken: ubAaveAMPL = r1 aaveAMPL
-        uint256 r1 = IUnbuttonToken(address(_wrappedToken)).wrapperToUnderlying(wrappedAmount) + 1;
-
-        // r1 aaveAMPL = r1 AMPL (AMPL and aaveAMPL have a 1:1 exchange rate)
-
-        // r1 AMPL = r2 wAMPL
-        return IUnbuttonToken(address(_mainToken)).underlyingToWrapper(r1) + 1;
+        uint256 rate = _exchangeRateModel.calculateExchangeRate();
+        return wrappedAmount.mulUp(rate) + 1;
     }
 
     // This function will run only once in the lifetime of the contract if the global variables are not yet initialized
